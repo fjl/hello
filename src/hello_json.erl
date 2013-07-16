@@ -103,6 +103,7 @@ encode(false)                    -> <<"false">>;
 encode(null)                     -> <<"null">>;
 encode({Props})                  -> enc_obj(Props, <<"{">>);
 encode({obj, Props})             -> enc_obj(Props, <<"{">>);
+encode(Props = [{_, _} | _])     -> enc_obj(Props, <<"{">>);
 encode({Date, Time})             -> enc_timestamp(Date, Time);
 encode(Lis) when is_list(Lis)    -> enc_array(Lis, <<"[">>);
 encode(Bin) when is_binary(Bin)  -> enc_string(Bin);
