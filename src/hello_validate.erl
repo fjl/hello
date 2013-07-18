@@ -53,7 +53,7 @@ find_method(MList, MethodName) when is_atom(MethodName) ->
 request_params(Method, CallbackModule, Request) ->
     Mod = {CallbackModule},
     PInfo = get_param_info(Mod, Method#rpc_method.name),
-    request_params_gen(Method, PInfo, Mod, Request).
+    request_params_gen(Method, PInfo, Request).
 
 -spec request_params(#rpc_method{}, module(), any(), #request{})
     -> {ok, [hello_json:value()] | [{atom(), hello_json:value()}]} | {error, iodata()}.
@@ -61,7 +61,7 @@ request_params(Method, CallbackModule, Request) ->
 request_params(Method, CallbackModule, ModuleStat, Request) ->
     Mod = {CallbackModule, ModuleStat},
     PInfo = get_param_info(Mod, Method#rpc_method.name),
-    request_params_gen(Method, PInfo, Mod, Request).
+    request_params_gen(Method, PInfo, Request).
 
 -spec type(json_type(), hello_json:value()) -> boolean() | {true, NewVal::any()}.
 type(boolean, Val) when (Val == true) or (Val == false) -> true;
@@ -83,38 +83,32 @@ get_param_info({CallbackModule}, Name) ->
 get_param_info({CallbackModule, ModuleStat}, Name) ->
     CallbackModule:param_info(Name, ModuleStat).
 
-filter_param_info(PInfo, []) ->
-    {PInfo, []};
-filter_param_info(PInfo, Except) ->
-    lists:partition(fun(#rpc_param{name = PName}) -> not lists:member(PName, Except) end, PInfo).
-
 strip_keys(Proplist) ->
     lists:map(fun ({_K, V}) -> V end, Proplist).
 
-request_params_gen(#rpc_method{params_as = WantParamEncoding}, Info, Mod, #request{params = ParamsIn}) ->
+request_params_gen(#rpc_method{params_as = WantParamEncoding}, PInfo,
+                   #request{params = ParamsIn}) ->
     try
-        case is_record(Info, rpc_bulk) of
-            false ->
-                Params = params_to_proplist(Info, ParamsIn),
-                Validated = validate_params(Info, Params);
-            true  ->
-                PInfo = get_param_info(Mod, Info#rpc_bulk.reuse),
-                {BulkInfo, SingleInfo} = filter_param_info(PInfo, Info#rpc_bulk.except),
-                [BulkParam|SingleParam] = ParamsIn,
-                SingleProps = params_to_proplist(SingleInfo, SingleParam),
-                SingleValid = validate_params(SingleInfo, SingleProps),
-                BulkValid = lists:map(fun(P) ->
-                        BulkProp = params_to_proplist(BulkInfo, P),
-                        strip_keys(validate_params(BulkInfo, BulkProp))
-                    end, BulkParam),
-                Validated = [{Info#rpc_bulk.name, BulkValid}|SingleValid]
-        end,
-        case WantParamEncoding of
-            proplist -> {ok, Validated};
-            list     -> {ok, strip_keys(Validated)}
-        end
+        request_params_gen_1(PInfo, ParamsIn, WantParamEncoding)
     catch
         throw:{invalid, Msg} -> {error, Msg}
+    end.
+
+request_params_gen_1(PInfo, ParamsIn, WantParamEncoding)
+                                            when is_function(PInfo) ->
+    case PInfo(WantParamEncoding, ParamsIn) of
+        {ok, _}=Res -> Res;
+        {error, Message} -> throw({invalid, Message})
+    end;
+
+request_params_gen_1(PInfo, ParamsIn, WantParamEncoding) when is_list(PInfo) ->
+    Params = params_to_proplist(PInfo, ParamsIn),
+    Validated = validate_params(PInfo, Params),
+
+    case WantParamEncoding of
+        proplist -> {ok, Validated};
+        list     -> {ok, strip_keys(Validated)};
+        object   -> {ok, {Validated}}
     end.
 
 validate_params(PInfo, Params) ->

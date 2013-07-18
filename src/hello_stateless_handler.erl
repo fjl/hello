@@ -36,15 +36,34 @@
 %   ```
 %      -record(rpc_method, {
 %          name              :: atom(),
-%          params_as = list  :: 'list' | 'proplist',
+%          params_as = list  :: 'list' | 'proplist' | 'object',
 %          description = ""  :: string()
 %      }).
 %   '''
 %
 %   === param_info(MethodName :: atom()) -> [#rpc_param{}] ===
 %   The ``param_info/1'' callback should have a clause for every method name returned from ``method_info/0''.
-%   Its return value is a list of records that describe the parameters of the method requested.
+%   Its return value is either a list of records that describe the parameters
+%   of the method requested or a fun.
+%   In the latter case, an anonymous returned function should do a validation.
+%   It expects to be called with two arguments. The first one denotes a type of
+%   parameterss to be returned and the second one corresponds to decoded
+%   parameters. The function must return either
+%   ``{ok, Params :: list() | proplist() | hello_json:json_object}'' in a case
+%   of successful validation or
+%   ``{error, Message :: string()}''. E.g.:
+%   ```
+%       fun
+%           (list, {Params}) ->
+%               case validate_params(Params) of
+%                   ok -> [V || {K, V} <- Params];
+%                   {error, Msg} -> {error, Msg}
+%               end;
+%           (...)
+%       end
+%   '''
 %
+%   A definition of the record used to decribe the parameters:
 %   ```
 %      -record(rpc_param, {
 %          name               :: atom(),

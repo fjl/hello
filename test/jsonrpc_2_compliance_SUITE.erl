@@ -105,10 +105,26 @@ method_info() ->
     [#rpc_method{name = subtract}].
 
 param_info(subtract) ->
-    [#rpc_param{name = subtrahend,
-                type = number},
-     #rpc_param{name = minuend,
-                type = number}].
+    fun
+        (list, {Params}) ->
+            Subtrahend = proplists:get_value(<<"subtrahend">>, Params),
+            Minuend = proplists:get_value(<<"minuend">>, Params),
+
+            case validate_operands(Subtrahend, Minuend) of
+                true -> {ok, [Subtrahend, Minuend]};
+                false -> {error, "invalid_params"}
+            end;
+        (list, [Subtrahend, Minuend]=Params) ->
+            case validate_operands(Subtrahend, Minuend) of
+                true -> {ok, Params};
+                false -> {error, "invalid_params"}
+            end;
+        (_, _) ->
+            {error, "invalid_params"}
+    end.
+
+validate_operands(Sub, Min) when is_number(Sub) andalso is_number(Min)-> true;
+validate_operands(_, _) -> false.
 
 handle_request(_Context, subtract, [Subtrahend, Minuend]) ->
     {ok, Subtrahend - Minuend}.

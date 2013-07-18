@@ -7,7 +7,7 @@
 
 -record(rpc_method, {
     name              :: atom(),
-    params_as = list  :: 'list' | 'proplist',
+    params_as = list  :: 'list' | 'proplist' | 'object',
     description = ""  :: string()
 }).
 
@@ -16,12 +16,5 @@
     type = any         :: hello_validate:param_type(),
     optional = false   :: boolean(),
     default            :: term(),
-    description = ""   :: string()
-}).
-
--record(rpc_bulk, {
-    reuse              :: atom(),
-    except             :: [atom()],
-    name               :: atom(),
     description = ""   :: string()
 }).
