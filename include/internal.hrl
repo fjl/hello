@@ -51,3 +51,4 @@
 }).
 
 -define(INCOMING_MSG_MSG, '$hello_incoming_message').
+-define(DEFAULT_LOG_HANDLER, hello_disklog_log).

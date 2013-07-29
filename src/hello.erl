@@ -44,9 +44,6 @@ start() ->
     application:start(hello).
 
 start(_Type, _StartArgs) ->
-    %% create the log dir
-    {ok, LogDir} = application:get_env(hello, request_log_dir),
-    ok = filelib:ensure_dir(filename:join(LogDir, ".")),
     {ok, Supervisor} = hello_supervisor:start_link(),
     ok = hello_request_log:open_bad_requests(Supervisor),
     {ok, Supervisor, undefined}.
