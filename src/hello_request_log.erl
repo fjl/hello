@@ -20,110 +20,66 @@
 
 % @private
 -module(hello_request_log).
--export([open/2, close/1, open_bad_requests/1, close_bad_requests/0, request/5, bad_request/5]).
+
+-export([open/2, close/1, open_bad_requests/1, close_bad_requests/0, request/5,
+         bad_request/5]).
 
 -include("internal.hrl").
 
+-type endpoint() :: atom() | pid().
+-type resp() :: 'ok' | {'error', term()}.
+
+-callback open(CallbackModule :: module(),
+               Owner :: pid()) -> resp().
+-callback open_bad_requests(Owner :: pid()) -> resp().
+-callback close(CallbackModule :: module()) -> resp().
+-callback close_bad_requests() -> resp().
+-callback request(CallbackModule    :: module(),
+                  Handler           :: atom(),
+                  Endpoint          :: endpoint(),
+                  Request           :: hello_proto:request(),
+                  Response          :: hello_proto:response()) -> resp().
+-callback bad_request(CallbackModule    :: module(),
+                      Handler           :: atom(),
+                      Endpoint          :: endpoint(),
+                      Message           :: binary(),
+                      Response          :: hello_proto:response()) -> resp().
+
+-define(MOD, (get_handler())).
+
 %% --------------------------------------------------------------------------------
 %% -- API
--spec open(module(), pid()) -> ok | {error, term()}.
+-spec open(module(), pid()) -> resp().
 open(CallbackModule, Owner) ->
-    Name         = reg_key(CallbackModule),
-    {ok, LogDir} = application:get_env(hello, request_log_dir),
-    File         = filename:join(LogDir, atom_to_list(CallbackModule) ++ ".log"),
-    LogOptions   = [{name, Name}, {linkto, Owner}, {file, File}, {format, external}, {type, halt}],
+    ?MOD:open(CallbackModule, Owner).
 
-    %% disk_log does reference counting internally, so we can open the log each time.
-    %% the log will be closed when the last endpoint terminates.
-    case disk_log:open(LogOptions) of
-        {ok, _Log} ->
-            ok;
-        {repaired, _Log, _Recovered, _Badbytes} ->
-            ok;
-        {error, Error} ->
-            {error, Error}
-    end.
-
+-spec open_bad_requests(pid()) -> resp().
 open_bad_requests(Owner) ->
-    open(bad_requests, Owner).
+    ?MOD:open_bad_requests(Owner).
 
--spec close(module()) -> ok | {error, no_such_log}.
+-spec close(module()) -> resp().
 close(CallbackModule) ->
-    disk_log:close(reg_key(CallbackModule)).
+    ?MOD:close(CallbackModule).
 
+-spec close_bad_requests() -> resp().
 close_bad_requests() ->
-    close(bad_requests).
+    ?MOD:close_bad_requests().
 
--spec request(module(), atom() | pid(), binary(), hello_proto:request(), hello_proto:response()) ->
-        ok | {error, no_such_log}.
+-spec request(module(), atom(), endpoint(), hello_proto:request(),
+              hello_proto:response()) -> resp().
 request(CallbackModule, Handler, Endpoint, Request, Response) ->
-    Date = cowboy_clock:rfc1123(),
-    Msg = <<Date/binary, " ", (fmt_handler(Handler))/binary, " ", Endpoint/binary, "\n",
-            (fmt_request(Request))/binary, (fmt_response(Response))/binary, "\n">>,
-    disk_log:blog(reg_key(CallbackModule), Msg).
+    ?MOD:request(CallbackModule, Handler, Endpoint, Request, Response).
 
+-spec bad_request(module(), atom(), endpoint(), binary(),
+                  hello_proto:response()) -> resp().
 bad_request(CallbackModule, Handler, Endpoint, Message, Response) ->
-    Date = cowboy_clock:rfc1123(),
-    Msg = <<Date/binary,
-            " ", (atom_to_binary(CallbackModule, latin1))/binary,
-            " ", (fmt_handler(Handler))/binary,
-            " ", Endpoint/binary, "\n",
-            (escape_badreq(Message))/binary, "\n",
-            (fmt_response(Response))/binary>>,
-    disk_log:blog(reg_key(bad_requests), Msg).
+    ?MOD:bad_request(CallbackModule, Handler, Endpoint, Message, Response).
 
 %% --------------------------------------------------------------------------------
-%% -- helpers
--compile({inline,reg_key/1}).
-reg_key(Module) ->
-    {hello_request_log, Module}.
+%% -- Helpers
 
-fmt_handler(Pid) ->
-    list_to_binary(pid_to_list(Pid)).
-
-fmt_request(#request{reqid = undefined, method = Method, params = Params}) ->
-    <<"{\"method\":", (hello_json:encode(Method))/binary,
-      ",\"params\":", (hello_json:encode(Params))/binary, "}\n">>;
-fmt_request(#request{reqid = ReqId, method = Method, params = Params}) ->
-    <<"{\"id\":", (hello_json:encode(ReqId))/binary,
-      ",\"method\":", (hello_json:encode(Method))/binary,
-      ",\"params\":", (hello_json:encode(Params))/binary, "}\n">>;
-fmt_request(#batch_request{requests = Requests}) ->
-    lists:foldl(fun (Req, Acc) ->
-                        <<Acc/binary, "\t", (fmt_request(Req))/binary>>
-                end, <<"Batch Request:\n">>, Requests).
-
-fmt_response(ignore) ->
-    <<>>;
-fmt_response(#response{reqid = ReqId, result = Result}) ->
-    <<"{\"id\":", (hello_json:encode(ReqId))/binary,
-      ",\"result\":", (hello_json:encode(Result))/binary, "}\n">>;
-fmt_response(#error{reqid = ReqId, code = Code, message = Message, data = Data}) ->
-    <<"{\"id\":", (hello_json:encode(ReqId))/binary,
-      (maybe_undefined(<<",\"code\":">>, Code))/binary,
-      (maybe_undefined(<<",\"message\":">>, Message))/binary,
-      (maybe_undefined(<<",\"data\": ">>, Data))/binary, "}\n">>;
-fmt_response(#batch_response{responses = Responses}) ->
-    lists:foldl(fun (Resp, Acc) ->
-                        <<Acc/binary, "\t", (fmt_response(Resp))/binary>>
-                end, <<"Batch Response:\n">>, Responses).
-
--compile([{inline, maybe_undefined/2}]).
-maybe_undefined(_Key, undefined) -> <<>>;
-maybe_undefined(Key, Value) -> <<Key/binary, (hello_json:encode(Value))/binary>>.
-
--compile([{inline, escape_badreq/1}]).
-escape_badreq(Message) ->
-    << <<(escape_byte(Byte))/binary>> || <<Byte>> <= Message >>.
-
--compile([{inline, escape_byte/1}]).
-escape_byte(Byte) when Byte < 16 ->
-    <<"\\x0", (<< <<Chr:8>> || Chr <- integer_to_list(Byte, 16) >>)/binary>>;
-escape_byte(Byte) when Byte < 32; Byte > 126 ->
-    <<"\\x", (<< <<Chr:8>> || Chr <- integer_to_list(Byte, 16) >>)/binary>>;
-escape_byte($\\) ->
-    <<"\\\\">>;
-escape_byte($") ->
-    <<"\\\"">>;
-escape_byte(Byte) ->
-    <<Byte>>.
+get_handler() ->
+    case application:get_env(hello, log_handler) of
+        undefined -> ?DEFAULT_LOG_HANDLER;
+        {ok, Handler} when is_atom(Handler) -> Handler
+    end.
