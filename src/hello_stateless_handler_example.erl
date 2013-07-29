@@ -37,7 +37,9 @@ method_info() ->
      #rpc_method{name        = enum_test,
                  description = "test hello's support for enums"},
      #rpc_method{name        = return_error,
-                 description = "always returns an error reply"}].
+                 description = "always returns an error reply"},
+     #rpc_method{name        = sum,
+                 description = "sum list of numbers"}].
 
 param_info(echo) ->
     [#rpc_param{name = text,
@@ -62,7 +64,9 @@ param_info(return_error) ->
      #rpc_param{name = message,
                 type = string,
                 optional = true,
-                default  = <<"">>}].
+                default  = <<"">>}];
+param_info(sum) ->
+    fun (Validated) -> {ok, Validated} end.
 
 handle_request(_Context, echo, [Str]) ->
     {ok, Str};
@@ -71,4 +75,6 @@ handle_request(_Context, append, [Str1, Str2]) ->
 handle_request(_Context, enum_test, [Atom]) ->
     {ok, Atom};
 handle_request(_Context, return_error, [Code, Message]) ->
-    {error, Code, Message}.
+    {error, Code, Message};
+handle_request(_Context, sum, [Addends]) ->
+    {ok, lists:sum(Addends)}.

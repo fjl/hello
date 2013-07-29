@@ -12,3 +12,6 @@
 /logs
 
 /tetrapak/.local.cache
+
+*.swp
+*.swo
