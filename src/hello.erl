@@ -24,6 +24,7 @@
 -export([start/2, stop/1]).
 -export([start/0, run_stateless_binary_request/3, run_stateless_binary_request/4]).
 -export([bind_stateful/3, bind_stateless/2, bindings/0]).
+-export([register_cowboy_handler/4]).
 -export_type([url/0, decoded_url/0, transport_params/0]).
 
 -include("internal.hrl").
@@ -113,6 +114,30 @@ binding_module(_Scheme)   -> error(badprotocol).
 -spec bindings() -> [{url(), module()}].
 bindings() ->
     [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || Binding <- hello_registry:bindings()].
+
+% @doc Add a non-RPC http handler.
+%   Due to internal bloat, it's not possible to run the hello HTTP RPC
+%   handler without having hello start the server. The HTTP server
+%   started by hello performs its own dispatch. This function allows
+%   you to hook a cowboy handler into the hello dispatch.
+%
+%   No server is started for the handler. You need to bind at least
+%   one RPC handler in order to start a server..
+%   The handler will be dispatched to until ContextPid exits.
+-spec register_cowboy_handler(pid(), url(), module(), term()) -> ok.
+register_cowboy_handler(ContextPid, URL, Module, Args) ->
+    case (catch ex_uri:decode(URL)) of
+        {ok, Rec, _} ->
+            {Host, Port, Path} = url_details(Rec),
+            hello_registry:register_cowboy_handler(ContextPid, Host, Port, Path, Module, Args);
+        _Other ->
+            error(badurl)
+    end.
+
+url_details(U = #ex_uri{scheme = "http", authority = A = #ex_uri_authority{port = undefined}}) ->
+    url_details(U#ex_uri{authority = A#ex_uri_authority{port = 80}});
+url_details(#ex_uri{authority = #ex_uri_authority{host = Host, port = Port}, path = Path}) ->
+    {unicode:characters_to_binary(Host), Port, unicode:characters_to_binary(Path)}.
 
 -type transport_params() :: [{atom(), any()}].
 % @doc Run a single not-yet-decoded RPC request against the given callback module.

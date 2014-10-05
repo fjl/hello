@@ -55,8 +55,28 @@ url_for_log(#binding{url = URL}) ->
 %% --------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)
 init({tcp, http}, Req, _) ->
-    {ok, Req, undefined}.
+    {Port, Req1} = cowboy_req:port(Req),
+    {Path, Req2} = cowboy_req:path(Req1),
+    {Host, Req3} = cowboy_req:host(Req2),
+    case hello_registry:lookup_cowboy_handler(Host, Port, Path) of
+        {ok, _, {Mod, Args}} ->
+            case Mod:init({tcp, http}, Req3, Args) of
+                {ok, Req4, State} ->
+                    {ok, Req4, {ext_handler, Mod, State}};
+                Other ->
+                    Other
+            end;
+        {error, not_found} ->
+            {ok, Req3, undefined}
+    end.
 
+handle(Req, {ext_handler, Mod, State}) ->
+    case Mod:handle(Req, State) of
+        {ok, Req1, NewState} ->
+            {ok, Req1, {ext_handler, Mod, NewState}};
+        Other ->
+            Other
+    end;
 handle(Req, State) ->
     {Method, Req1} = cowboy_req:method(Req),
     case lists:member(Method, [<<"PUT">>, <<"POST">>]) of
@@ -77,6 +97,8 @@ handle(Req, State) ->
             {ok, Req2, undefined}
     end.
 
+terminate(Reason, Req, {ext_handler, Mod, State}) ->
+    Mod:terminate(Reason, Req, State);
 terminate(_Reason, _Req, _State) ->
     ok.
 

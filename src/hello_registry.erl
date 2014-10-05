@@ -24,6 +24,7 @@
 -export([start/0,start_link/0, register/3, multi_register/2, add_to_key/2, unregister/1, lookup/1, lookup_pid/1]).
 -export([lookup_listener/1, lookup_listener/2, listener_key/2]).
 -export([bindings/0, lookup_binding/2]).
+-export([register_cowboy_handler/6, lookup_cowboy_handler/3]).
 %% internal
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -138,6 +139,21 @@ listener_key({ipc, Path}, undefined) ->
     {listener, {ipc, Path}, undefined};
 listener_key(IP, Port) when is_tuple(IP) andalso is_integer(Port) andalso (Port >= 0) ->
     {listener, IP, Port}.
+
+-spec register_cowboy_handler(pid(), binary(), integer(), binary(), module(), term())
+                           -> ok.
+register_cowboy_handler(Pid, Host, Port, Path, Mod, Args) ->
+    register({cowboy_ext_handler, Host, Port, Path}, {Mod, Args}, Pid).
+
+-spec lookup_cowboy_handler(binary(), integer(), binary())
+                           -> {ok, pid(), {module(), Args::term()}} | {error, not_found}.
+lookup_cowboy_handler(Host, Port, Path) ->
+    case lookup({cowboy_ext_handler, Host, Port, Path}) of
+        {error, not_found} ->
+            lookup({cowboy_ext_handler, <<"0.0.0.0">>, Port, Path});
+        Found = {ok, _Pid, _Stuff} ->
+            Found
+    end.
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
