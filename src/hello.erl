@@ -38,6 +38,7 @@ start() ->
     application:start(ranch),
     application:start(crypto),
     application:start(cowboy),
+    application:start(abnfc),
     application:start(ex_uri),
     application:start(ibrowse),
     application:start(erlzmq),
